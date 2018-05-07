@@ -130,14 +130,14 @@ impl PluginMiner {
 			let l = miner_config.clone().miner_plugin_config;
 			if let Some(dp) = l[index].device_parameters.clone() {
 				for (device, param_map) in dp.into_iter() {
+					let device_id = match device.parse::<u32>() {
+						Ok(n) => n,
+						Err(e) => {
+							error!(LOGGER, "Error initializing mining plugin: {:?}", e);
+							panic!("Unable to init mining plugin.");
+						}
+					};
 					for (param_name, param_value) in param_map.into_iter() {
-						let device_id = match device.parse::<u32>() {
-							Ok(n) => n,
-							Err(e) => {
-								error!(LOGGER, "Error initializing mining plugin: {:?}", e);
-								panic!("Unable to init mining plugin.");
-							}
-						};
 						debug!(
 							LOGGER,
 							"Cuckoo Plugin {}: Setting mining parameter {} to {} on Device {}",
@@ -150,6 +150,20 @@ impl PluginMiner {
 							.parameter_list
 							.push((param_name, device_id, param_value));
 					}
+					// set first 32 bit of nonce from global mining param for a start
+					// this should maybe be changed to a unique per device or per plugin value using bits 33
+					// and following, so that every device on a miner has its own range of ids
+					let nonce_identity = miner_config.clone().nonce_identity;
+					config
+						.parameter_list
+						.push((String::from("nonce_identity"), device_id, nonce_identity));
+					debug!(
+						LOGGER, "Cuckoo Plugin {}: setting {} to {} on Device  {}", 
+						index, 
+						"nonce_identity",
+						nonce_identity,
+						device_id 
+					);
 				}
 			}
 			cuckoo_configs.push(config);
