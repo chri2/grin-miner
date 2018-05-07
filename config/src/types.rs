@@ -94,6 +94,9 @@ pub struct MinerConfig {
 	/// mining loop by adding a sleep to the thread
 	pub stratum_server_addr: String,
 
+	/// first 32 bit of nonce
+	pub nonce_identity: u32,
+
 	/// plugin dir
 	pub miner_plugin_dir: Option<String>,
 
@@ -105,6 +108,7 @@ impl Default for MinerConfig {
 	fn default() -> MinerConfig {
 		MinerConfig {
 			run_tui: false,
+			nonce_identity: 0,
 			miner_plugin_dir: None,
 			miner_plugin_config: vec![],
 			stratum_server_addr: String::from("http://127.0.0.1:13416"),
