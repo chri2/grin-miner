@@ -42,12 +42,15 @@ run_tui = true
 # listening grin stratum server url
 stratum_server_addr = "127.0.0.1:13416"
 
+# disabled by default
+#
 # first 32-bit of the otherwise randomly generated nonce. if not set 64 bit are 
 # randomly generated. if set second half 32 bit only are randomly generated. hex value.
 #
 # used as an identity to a mining pool following https://gist.github.com/chri2/865f739d4275a3b76feb56629c1ac922
 #
-nonce_identity = "0x5F3963C1"
+# hex doesn't work here, yet. hex needs to be converted to decimal: e.g. 0x5F3963C1 is
+# nonce_identity = 1597596609
 
 #The directory in which mining plugins are installed
 #if not specified, grin miner will look in the directory /deps relative
