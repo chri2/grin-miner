@@ -18,6 +18,7 @@
 
 use std::sync::{mpsc, Arc, RwLock};
 use time;
+use std::{self, thread};
 use util::LOGGER;
 use config;
 use stats;
@@ -37,7 +38,7 @@ pub struct Controller {
 	pub tx: mpsc::Sender<types::MinerMessage>,
 	client_tx: Option<mpsc::Sender<types::ClientMessage>>,
 	current_height: u64,
-	current_network_diff: u64,
+	current_target_diff: u64,
 	stats: Arc<RwLock<stats::Stats>>,
 }
 
@@ -56,7 +57,7 @@ impl Controller {
 			tx: tx,
 			client_tx: None,
 			current_height: 0,
-			current_network_diff: 0,
+			current_target_diff: 0,
 			stats: stats,
 		})
 	}
@@ -73,20 +74,18 @@ impl Controller {
 
 		loop {
 			while let Some(message) = self.rx.try_iter().next() {
-				debug!(LOGGER, "Miner recieved message: {:?}", message);
+				debug!(LOGGER, "Miner received message: {:?}", message);
 				let result = match message {
 					types::MinerMessage::ReceivedJob(height, diff, pre_pow) => {
-						if self.job_handle.is_some() {
-							self.job_handle.as_mut().unwrap().stop_jobs();
-						}
+						self.stop_job();
 						self.current_height = height;
-						self.current_network_diff = diff;
+						self.current_target_diff = diff;
 						self.start_job(30, &pre_pow)
 					},
 					types::MinerMessage::StopJob => {
-						self.stop_job();
 						debug!(LOGGER, "Stopping jobs");
-						return;
+						self.stop_job();
+						Ok(())
 					}types::MinerMessage::Shutdown => {
 						debug!(LOGGER, "Stopping jobs and Shutting down mining controller");
 						self.stop_job();
@@ -112,6 +111,7 @@ impl Controller {
 					sol.solution_nonces.to_vec(),
 				));
 			}
+			thread::sleep(std::time::Duration::from_millis(100));
 		}
 	}
 
@@ -135,7 +135,7 @@ impl Controller {
 
 		// Start the miner working
 		let miner = self.plugin_miner.as_mut().unwrap().get_consumable();
-		self.job_handle = Some(miner.notify(1, &pre_pow, "", self.current_network_diff)?);
+		self.job_handle = Some(miner.notify(1, &pre_pow, "", self.current_target_diff)?);
 		Ok(())
 	}
 
@@ -202,7 +202,7 @@ impl Controller {
 		if sps_total.is_finite() {
 			let mut stats = self.stats.write().unwrap();
 			stats.mining_stats.combined_gps = sps_total;
-			stats.mining_stats.network_difficulty = self.current_network_diff;
+			stats.mining_stats.target_difficulty = self.current_target_diff;
 			stats.mining_stats.block_height = self.current_height;
 			stats.mining_stats.cuckoo_size = 30;
 			let mut device_vec = vec![];

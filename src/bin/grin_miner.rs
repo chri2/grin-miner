@@ -133,7 +133,14 @@ fn main() {
 		panic!("Error loading mining controller: {}", e);
 	});
 
-	let cc = client::Controller::new(&mining_config.stratum_server_addr, mc.tx.clone(), stats.clone()).unwrap_or_else(|e| {
+	let cc = client::Controller::new(
+		&mining_config.stratum_server_addr,
+		mining_config.stratum_server_login.clone(),
+		mining_config.stratum_server_password.clone(),
+		mc.tx.clone(),
+		stats.clone(),
+	).unwrap_or_else(|e| {
+
 		panic!("Error loading stratum client controller: {:?}", e);
 	});
 
@@ -172,5 +179,6 @@ fn main() {
 			thread::sleep(std::time::Duration::from_millis(100));
 			break;
 		}
+		thread::sleep(std::time::Duration::from_millis(100));
 	}
 }
