@@ -34,8 +34,6 @@ log_file_append = true
 ### MINING CLIENT CONFIGURATION       ###
 #########################################
 
-#Mining details. This section is optional. If it's not here, the server
-#will default to not mining.
 [mining]
 
 # whether to run the tui
@@ -44,7 +42,12 @@ run_tui = true
 # listening grin stratum server url
 stratum_server_addr = "127.0.0.1:13416"
 
-#
+# login for the stratum server (if required)
+#stratum_server_login = "http://192.168.1.100:13415"
+
+# password for the stratum server (if required)
+#stratum_server_password = "x"
+
 #The directory in which mining plugins are installed
 #if not specified, grin miner will look in the directory /deps relative
 #to the executable
@@ -55,15 +58,8 @@ stratum_server_addr = "127.0.0.1:13416"
 ### CUCKOO MINER PLUGIN CONFIGURATION ###
 #########################################
 
-# These entries configure instances of cuckoo miner
-# plugins if the 'use_cuckoo_miner' value above is
-# set to 'true'.
-#
 # Multiple plugins can be specified, (e.g. a cpu
-# miner and a gpu miner running in parallel). However,
-# if 'use_async_mode' above is set to 'false', only
-# the first plugin specified will be used for mining
-# in single-threaded mode
+# miner and a gpu miner running in parallel)
 
 # You'll likely get the best performance using a
 # single GPU plugin and single CPU plugin in parallel
@@ -108,7 +104,7 @@ NUM_THREADS = 4
 #   (nvcc should be in your PATH)
 #   Wrong gcc? install gcc-5 g++-5; export CC=`which gcc-5`; # then build
 #2) Uncomment the 'build-cuda-plugin' feature
-#   in pow/Cargo.toml
+#   in util/Cargo.toml
 #
 #Parameters can be set per device, as below. In sync mode
 #device 0 is currently the only device used. In async mode
@@ -119,7 +115,7 @@ NUM_THREADS = 4
 #[[mining.miner_plugin_config]]
 #type_filter = "cuda"
 #[mining.miner_plugin_config.device_parameters.0]
-#USE_DEVICE = 1
+#USE_DEVICE = 0
 
 # Below are advanced optional per-device tweakable params
 
@@ -137,6 +133,26 @@ NUM_THREADS = 4
 #RENAME_1_STAGE2_TPB = 128
 #TRIM_3_TPB = 32
 #RENAME_3_TPB = 8
+
+#[mining.miner_plugin_config.device_parameters.1]
+#USE_DEVICE = 1
+
+#[mining.miner_plugin_config.device_parameters.2]
+#USE_DEVICE = 1
+
+#Meaner CUDA Miner
+#[[mining.miner_plugin_config]]
+#type_filter = "cuda_meaner"
+#[mining.miner_plugin_config.device_parameters.0]
+#USE_DEVICE = 1
+
+# Below are advanced optional per-device tweakable params
+
+#N_TRIMS = 176
+#GENA_BLOCKS = 128
+#TAIL_TPB = 1024
+#RECOVER_BLOCKS = 1024
+#RECOVER_TPB = 1024
 
 #[mining.miner_plugin_config.device_parameters.1]
 #USE_DEVICE = 1

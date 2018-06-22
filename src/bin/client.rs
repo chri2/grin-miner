@@ -15,19 +15,19 @@
 //! Client network controller, controls requests and responses from the
 //! stratum server
 
-use std::net::TcpStream;
 use std;
-use std::thread;
 use std::io::{BufRead, ErrorKind, Write};
+use std::net::TcpStream;
 use std::sync::{mpsc, Arc, RwLock};
+use std::thread;
 
-use serde_json;
 use bufstream::BufStream;
+use serde_json;
 use time;
 
+use stats;
 use types;
 use util::LOGGER;
-use stats;
 
 #[derive(Debug)]
 pub enum Error {
@@ -37,6 +37,8 @@ pub enum Error {
 pub struct Controller {
 	_id: u32,
 	server_url: String,
+	server_login: Option<String>,
+	server_password: Option<String>,
 	stream: Option<BufStream<TcpStream>>,
 	rx: mpsc::Receiver<types::ClientMessage>,
 	pub tx: mpsc::Sender<types::ClientMessage>,
@@ -48,6 +50,8 @@ pub struct Controller {
 impl Controller {
 	pub fn new(
 		server_url: &str,
+		server_login: Option<String>,
+		server_password: Option<String>,
 		miner_tx: mpsc::Sender<types::MinerMessage>,
 		stats: Arc<RwLock<stats::Stats>>,
 	) -> Result<Controller, Error> {
@@ -55,6 +59,8 @@ impl Controller {
 		Ok(Controller {
 			_id: 0,
 			server_url: server_url.to_string(),
+			server_login: server_login,
+			server_password: server_password,
 			stream: None,
 			tx: tx,
 			rx: rx,
@@ -135,6 +141,37 @@ impl Controller {
 		self.send_message(&req_str)
 	}
 
+	fn send_login(&mut self) -> Result<(), Error> {
+		// only send the login request if a login string is configured
+		let login_str = match self.server_login.clone() {
+			None => "".to_string(),
+			Some(server_login) => server_login.clone(),
+		};
+		if login_str == "" {
+			return Ok(());
+		}
+		let password_str = match self.server_password.clone() {
+			None => "".to_string(),
+			Some(server_password) => server_password.clone(),
+		};
+		let params = format!(
+			"{}{:?}{}{:?}{}",
+			"{\"login\":", login_str, ",\"pass\":", password_str, ",\"agent\":\"grin-miner\"}"
+		);
+		let req = types::RpcRequest {
+			id: self.last_request_id.to_string(),
+			jsonrpc: "2.0".to_string(),
+			method: "login".to_string(),
+			params: Some(serde_json::to_value(&params).unwrap()),
+		};
+		let req_str = serde_json::to_string(&req).unwrap();
+		{
+			let mut stats = self.stats.write().unwrap();
+			stats.client_stats.last_message_sent = format!("Last Message Sent: Login");
+		}
+		self.send_message(&req_str)
+	}
+
 	fn send_message_get_status(&mut self) -> Result<(), Error> {
 		let req = types::RpcRequest {
 			id: self.last_request_id.to_string(),
@@ -157,13 +194,13 @@ impl Controller {
 			id: self.last_request_id.to_string(),
 			jsonrpc: "2.0".to_string(),
 			method: "submit".to_string(),
-			params: Some(params),
+			params: Some(serde_json::from_str(&params).unwrap()),
 		};
 		let req_str = serde_json::to_string(&req).unwrap();
 		{
 			let mut stats = self.stats.write().unwrap();
 			stats.client_stats.last_message_sent = format!(
-				"Last Message Sent: Found block for height: {} - nonce: {}",
+				"Last Message Sent: Found share for height: {} - nonce: {}",
 				params_in.height, params_in.nonce
 			);
 		}
@@ -192,7 +229,7 @@ impl Controller {
 		debug!(LOGGER, "Received request type: {}", req.method);
 		let _ = match req.method.as_str() {
 			"job" => {
-				let job: types::JobTemplate = serde_json::from_str(&req.params.unwrap()).unwrap();
+				let job: types::JobTemplate = serde_json::from_value(req.params.unwrap()).unwrap();
 				info!(LOGGER, "Got a new job: {:?}", job);
 				self.send_miner_job(job)
 			}
@@ -208,7 +245,7 @@ impl Controller {
 			"status" => {
 				if res.result.is_some() {
 					let st: types::WorkerStatus =
-						serde_json::from_str(&res.result.unwrap()).unwrap();
+						serde_json::from_value(res.result.unwrap()).unwrap();
 					info!(
 						LOGGER,
 						"Status for worker {} - Height: {}, Difficulty: {}, ({}/{}/{})",
@@ -219,9 +256,12 @@ impl Controller {
 						st.rejected,
 						st.stale
 					);
-					// XXX TODO:  Add thses status to the stats
+					// Add these status to the stats
 					let mut stats = self.stats.write().unwrap();
-					stats.client_stats.last_message_received = format!("Last Message Received: Accepted: {}, Rejected: {}, Stale: {}", st.accepted, st.rejected, st.stale);
+					stats.client_stats.last_message_received = format!(
+						"Last Message Received: Accepted: {}, Rejected: {}, Stale: {}",
+						st.accepted, st.rejected, st.stale
+					);
 				} else {
 					let err = res.error.unwrap();
 					let mut stats = self.stats.write().unwrap();
@@ -235,7 +275,7 @@ impl Controller {
 			"getjobtemplate" => {
 				if res.result.is_some() {
 					let job: types::JobTemplate =
-						serde_json::from_str(&res.result.unwrap()).unwrap();
+						serde_json::from_value(res.result.unwrap()).unwrap();
 					{
 						let mut stats = self.stats.write().unwrap();
 						stats.client_stats.last_message_received = format!(
@@ -292,6 +332,18 @@ impl Controller {
 					error!(LOGGER, "Failed to request keepalive: {:?}", err);
 				}
 			}
+			// "login" response
+			"login" => {
+				if res.result.is_some() {
+					// Nothing to do for login "ok"
+					// dont update last_message_received with good login response
+				} else {
+					// This is a fatal error
+					let err = res.error.unwrap();
+					error!(LOGGER, "Failed to log in: {:?}", err);
+					panic!("Failed to log in to stratum server: {:?}", err);
+				}
+			}
 			// unknown method response
 			_ => {
 				let mut stats = self.stats.write().unwrap();
@@ -346,6 +398,7 @@ impl Controller {
 			} else {
 				// get new job template
 				if was_disconnected {
+					let _ = self.send_login();
 					let _ = self.send_message_get_job_template();
 					was_disconnected = false;
 				}
@@ -367,12 +420,14 @@ impl Controller {
 									// Is this a response or request?
 									if v["id"] == String::from("Stratum") {
 										// this is a request
-										let request: types::RpcRequest = serde_json::from_str(&m).unwrap();
+										let request: types::RpcRequest =
+											serde_json::from_str(&m).unwrap();
 										let _ = self.handle_request(request);
 										continue;
 									} else {
 										// this is a response
-										let response: types::RpcResponse = serde_json::from_str(&m).unwrap();
+										let response: types::RpcResponse =
+											serde_json::from_str(&m).unwrap();
 										let _ = self.handle_response(response);
 										continue;
 									}
@@ -412,6 +467,7 @@ impl Controller {
 					error!(LOGGER, "Mining Controller Error {:?}", e);
 				}
 			}
+			thread::sleep(std::time::Duration::from_millis(100));
 		} // loop
 	}
 }
